@@ -4,10 +4,13 @@ submission if it is longer than that.
 Homework reflection 1
 
 1. In Coding Quiz 1, you are asked to find the distance of the farthest match in a set.  Is this farthest match distance too far to be a meaningful match?  How can you decide this?
+The meaningfulness of the farthest match distance depends on the context and the distribution of the Z variable. If the farthest match is much larger than the typical distances between matched pairs, it may indicate that this match is not a good or reliable comparison. One way to decide if the distance is too far is to compare it to a threshold based on domain knowledge, or to the distribution of all match distances (for example, using the mean or a percentile such as the 95th percentile). If the farthest match is an outlier compared to most matches, it may be best to exclude it or set a maximum allowable distance for matches. This helps ensure that the matches are meaningful and that the comparison groups are truly similar on the matching variable.
 
 2. In Coding Quiz 1, there are two approaches to matching: 
 (A) Picking the best match X = 0 corresponding to each X = 1 using Z values.
 (B) Using radius_neighbors to pick all matches X = 0 within a distance of 0.2 of each X = 1.
+
+One alternative matching approach is k-nearest neighbors (k-NN) matching. Instead of picking just the single closest match or all matches within a fixed radius, for each X = 1 observation, you select the k closest X = 0 observations based on the Z value. This allows you to use more information from the data and can help reduce the influence of outliers or noise. The value of k can be chosen based on the sample size or through cross-validation. After matching, you can average the outcomes of the k matches for each X = 1, or use weighted averages based on distance. This method is commonly used in causal inference and propensity score matching to create more robust comparison groups.
 
 Invent your own type of matching similar to 1 and 2 (or look one up on the internet), which has a different way to pick the matches in X = 0.  Clearly explain the approach you invented or found.
 
