@@ -1,0 +1,90 @@
+In all cases, written answers (apart from code) should not be longer than about three paragraphs.  Graders may not read all of your
+submission if it is longer than that.
+
+Homework reflection 1
+
+1. In Coding Quiz 1, you are asked to find the distance of the farthest match in a set.  Is this farthest match distance too far to be a meaningful match?  How can you decide this?
+
+I looked at the overall distribution of all match distances in the dataset. If the farthest match is significantly larger than the other distances it's probably not a good match. I calculated summary statistics like the mean and standard deviation of all distances and checked if the farthest one is more than 2-3 standard deviations away. A match is meaningful if the units being compared are actually similar on the matching variable.
+
+2. In Coding Quiz 1, there are two approaches to matching: 
+(A) Picking the best match X = 0 corresponding to each X = 1 using Z values.
+(B) Using radius_neighbors to pick all matches X = 0 within a distance of 0.2 of each X = 1.
+
+Invent your own type of matching similar to 1 and 2 (or look one up on the internet), which has a different way to pick the matches in X = 0.  Clearly explain the approach you invented or found.
+
+I propose a dynamic bandwidth matching approach. This method adjusts the radius for each X=1 observation based on the local density of X=0 observations. For each X=1 unit, I find its k-nearest X=0 neighbors. Then I calculate the distance to the kth nearest neighbor and use that as the radius for that specific observation. This adaptive radius then determines which X=0 units get matched. In dense regions the radius will be smaller and in sparse regions it will expand to capture enough matches. This is better than a fixed radius because it balances the quality vs. quantity trade off across the distribution of Z. I'd implement this using NearestNeighbors to find the k nearest points, extract the distance to the kth one, and then use radius_neighbors with that custom radius for each observation.
+
+Homework reflection 2
+
+1. Invent an example situation that would use fixed effects.
+
+I'm studying whether a new teaching method affects student test scores across multiple schools. Each school has its own characteristics like funding and teacher quality that stay pretty much the same over time. Fixed effects lets me give each school its own baseline level so I can see if the new teaching method actually works. Basically I'm comparing each school to itself before and after trying the new method. This way the school's unique features don't mess up my results. It's like controlling for everything that makes each school different so I can see the real effect of the teaching method.
+
+2. Write a Python program that performs a bootstrap simulation to find the variance in the mean of the Pareto distribution when different samples are taken.  Explain what you had to do for this.  As you make the full sample size bigger (for the same distribution), what happens to the variance of the mean of the samples?  Does it stay about the same, get smaller, or get bigger?
+
+PICUTRES
+
+I created a function that generates a sample from a Pareto distribution. Then I randomly picked data points from this sample over and over (with replacement) and calculated the mean each time. After doing this 1000 times I looked at how much the means varied. I tested with different sample sizes (50, 100, 500, 1000, 5000) and found that bigger samples give more consistent results. The variance gets smaller because when you have more data points your average is more reliable and stable.
+
+Homework reflection 3
+
+1. In the event study in Coding Quiz 3, how would we go about testing for a change in the second derivative as well?
+
+In Coding Quiz 3 we tested for jumps in the level and slope of the trend line. To test if the curvature (how fast the slope is changing) also changed I'd add squared time terms to the model. Basically I'd include t² and also D×t² where D is a dummy variable that's 0 before the event and 1 after. If the coefficient on D×t² is significant that means the curve got steeper or flatter after the event. I'd run the regression with these extra terms and check if the t-test shows the curvature change is real or just random noise.
+
+2. Create your own scenario that illustrates differences-in-differences. Describe the story behind the data and show whether there is a nonzero treatment effect.
+
+A city adds a bike-sharing program in 2023. Downtown gets bike stations (treatment) while Uptown doesn't (control). I measure commute times before (2022) and after (2024). Before: Downtown = 35 min, Uptown = 30 min. After: Downtown = 32 min, Uptown = 29 min. Uptown improved by 1 minute (maybe from general traffic improvements). Downtown improved by 3 minutes. The difference is 2 minutes which is the bike program's effect. Without the program Downtown would've only improved by 1 minute like Uptown did. So the bikes caused an extra 2-minute reduction. If I run a regression and the p-value is less than 0.05 then the effect is real and not just random chance.
+
+Homework reflection 4
+
+1. The Coding Quiz gives two options for instrumental variables.  For the second item (dividing the range of W into multiple ranges), explain how you did it, show your code, and discuss any issues you encountered.
+
+I divided W into 20 narrow ranges (bins) so each bin has similar W values. Then within each bin I calculated the effect separately and averaged them all together.
+
+PICTURES
+
+The main issues were some bins didn't have both Z=0 and Z=1 so I skipped those. Sometimes the X difference was almost zero which would cause division errors so I added a check. Picking the right number of bins was tricky because too few bins don't control W well and too many bins have too few data points. I used 20 bins as a middle ground.
+
+2. Plot the college outcome (Y) vs. the test score (X) in a small range of test scores around 80. On the plot, compare it with the Y probability predicted by logistic regression. The ground truth Y value is 0 or 1; don't just plot 0 or 1 - that will make it unreadable.  Find some way to make it look better than that.
+
+```python
+from sklearn.linear_model import LogisticRegression
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+
+# Load data and filter around 80
+df_a = pd.read_csv('homework_4.2.a.csv', index_col=0)
+df_local = df_a[(df_a['X'] >= 70) & (df_a['X'] <= 90)].copy()
+
+# Fit logistic regression
+log_model = LogisticRegression()
+log_model.fit(df_local[['X']], df_local['Y'])
+
+# Get predictions - create DataFrame to match feature names
+X_range = pd.DataFrame(np.linspace(70, 90, 100), columns=['X'])
+Y_pred_prob = log_model.predict_proba(X_range)[:, 1]
+
+# Bin the data to show average admission rates
+bins = pd.cut(df_local['X'], bins=20)
+binned_means = df_local.groupby(bins, observed=False)['Y'].mean()
+bin_centers = [interval.mid for interval in binned_means.index]
+
+# Create plot
+plt.figure(figsize=(12, 6))
+plt.scatter(bin_centers, binned_means, s=100, alpha=0.7, 
+            label='Actual (binned)', color='blue', edgecolors='black')
+plt.plot(X_range['X'], Y_pred_prob, 'r-', linewidth=3, 
+         label='Logistic Regression', alpha=0.8)
+plt.axvline(x=80, color='green', linestyle='--', linewidth=2, label='Cutoff = 80')
+plt.xlabel('Test Score (X)')
+plt.ylabel('P(College Admission)')
+plt.title('College Admission vs Test Score (Scores 70-90)')
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.show()
+```
+
+I grouped test scores into bins and calculated the average admission rate in each bin instead of plotting individual 0s and 1s. Then I fit a logistic regression model and plotted its smooth prediction curve. The binned averages show the actual data patterns while the logistic curve shows what the model predicts. If there's a discontinuity at the cutoff of 80 it would show up as a jump in the binned averages that the smooth logistic curve can't capture.
