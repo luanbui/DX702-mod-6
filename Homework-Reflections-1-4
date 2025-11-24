@@ -4,7 +4,8 @@ submission if it is longer than that.
 Homework reflection 1
 
 1. In Coding Quiz 1, you are asked to find the distance of the farthest match in a set.  Is this farthest match distance too far to be a meaningful match?  How can you decide this?
-The meaningfulness of the farthest match distance depends on the context and the distribution of the Z variable. If the farthest match is much larger than the typical distances between matched pairs, it may indicate that this match is not a good or reliable comparison. One way to decide if the distance is too far is to compare it to a threshold based on domain knowledge, or to the distribution of all match distances (for example, using the mean or a percentile such as the 95th percentile). If the farthest match is an outlier compared to most matches, it may be best to exclude it or set a maximum allowable distance for matches. This helps ensure that the matches are meaningful and that the comparison groups are truly similar on the matching variable.
+
+To decide if the farthest match distance is too far, I would first look at how it compares to the other match distances in the dataset. If it's way bigger than typical distances, that's a red flag that we might be matching units that aren't actually similar. I'd check the distribution of all match distances and see if the farthest one is an outlier - maybe by comparing it to the mean or the 95th percentile. You could also set a maximum caliper based on what makes sense for your data. For example, if you're matching on income and the farthest match is $50,000 apart while most are within $5,000, that's probably not a good match. The goal is to make sure the treated and control units we're comparing are actually comparable on the matching variable.
 
 2. In Coding Quiz 1, there are two approaches to matching: 
 (A) Picking the best match X = 0 corresponding to each X = 1 using Z values.
@@ -14,20 +15,150 @@ One alternative matching approach is k-nearest neighbors (k-NN) matching. Instea
 
 Invent your own type of matching similar to 1 and 2 (or look one up on the internet), which has a different way to pick the matches in X = 0.  Clearly explain the approach you invented or found.
 
+I came up with **Adaptive Caliper Matching** - instead of using one fixed radius for all treated units like in method B, this approach adjusts the radius based on how dense the control units are in that area. Here's how it works: for each X=1 unit, I first find the 5th nearest X=0 neighbor and multiply that distance by 1.5 to set my caliper. Then I include all X=0 observations within that personalized radius. The cool thing about this is that in areas where there aren't many control units, the caliper automatically gets wider so we don't lose treated units. But in dense areas, it stays tight to ensure good match quality. This seems better than method A (which only uses one match) and method B (which uses the same fixed radius everywhere regardless of the data density).
+
 Homework reflection 2
 
 1. Invent an example situation that would use fixed effects.
 
+Imagine a school district studying whether increasing instructional time affects student test scores across 50 schools over five years. Each school has its own characteristics - like whether it's in a rich or poor neighborhood, teacher quality, school culture - that affect baseline test scores but don't change much over time. If we just compared schools directly, we'd be mixing up the effect of instructional time with these school-specific factors. By using school fixed effects (giving each school its own intercept), we control for all these unchanging differences and focus only on how scores change within each school when instructional time increases. The model is: Score = β₀ + β₁(Time) + α_school + ε. This way, we isolate the true effect of time on performance without confounding from school characteristics.
+
 2. Write a Python program that performs a bootstrap simulation to find the variance in the mean of the Pareto distribution when different samples are taken.  Explain what you had to do for this.  As you make the full sample size bigger (for the same distribution), what happens to the variance of the mean of the samples?  Does it stay about the same, get smaller, or get bigger?
+
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+
+def bootstrap_pareto_variance(sample_size, n_bootstrap=1000, shape=2.5):
+    # Generate original sample from Pareto distribution
+    original_sample = np.random.pareto(shape, sample_size)
+    bootstrap_means = []
+    
+    # Perform bootstrap resampling
+    for _ in range(n_bootstrap):
+        bootstrap_sample = np.random.choice(original_sample, size=sample_size, replace=True)
+        bootstrap_means.append(np.mean(bootstrap_sample))
+    
+    return np.var(bootstrap_means)
+
+# Test with different sample sizes
+sample_sizes = [50, 100, 500, 1000, 5000]
+variances = []
+
+for size in sample_sizes:
+    var = bootstrap_pareto_variance(size)
+    variances.append(var)
+    print(f"Sample size: {size}, Variance of mean: {var:.4f}")
+
+# Plot results
+plt.plot(sample_sizes, variances, marker='o')
+plt.xlabel('Sample Size')
+plt.ylabel('Variance of Bootstrap Means')
+plt.title('Variance vs Sample Size')
+plt.show()
+```
+
+For this, I first generated a sample from a Pareto distribution with shape parameter 2.5. Then I did bootstrap resampling - randomly selecting observations with replacement 1000 times - and calculated the mean for each bootstrap sample. Finally, I computed the variance of all those means. I tested this with different sample sizes (50, 100, 500, 1000, 5000) and plotted the results. What I found is that as the sample size gets bigger, the variance of the mean gets smaller. This makes sense because of the standard error formula where variance decreases proportionally to 1/n. So larger samples give us much more stable and precise estimates of the population mean, which is exactly what we'd expect.
 
 Homework reflection 3
 
 1. In the event study in Coding Quiz 3, how would we go about testing for a change in the second derivative as well?
 
+To test for a change in the second derivative (curvature), I would add a quadratic time term and its interaction with the treatment dummy to the model. So instead of just Y = β₀ + β₁t + β₃D + β₄(D×t) + ε, we'd have: Y = β₀ + β₁t + β₂t² + β₃D + β₄(D×t) + β₅(D×t²) + ε, where D is the post-event indicator. The coefficient β₅ specifically tests whether the curvature changed after the event. If β₅ is statistically significant (using a t-test), that means the trend didn't just shift or change slope - it actually curved differently. You could also do a joint F-test on β₃, β₄, and β₅ together to test for any type of discontinuity (level, slope, or curvature) at the event time. Alternatively, you could use splines for even more flexibility in modeling the curvature change.
+
 2. Create your own scenario that illustrates differences-in-differences. Describe the story behind the data and show whether there is a nonzero treatment effect.
+
+My scenario: A large retail chain rolled out a new employee training program in 20 stores (treatment) in January 2024, while keeping 20 similar stores (control) on the old training. I tracked average monthly sales per employee for 6 months before (July-December 2023) and 6 months after (January-June 2024).
+
+**Before the training**: Control stores averaged $50,000/employee, treatment stores averaged $52,000/employee (so treatment stores were actually doing slightly better to start).
+
+**After the training**: Control stores went up to $53,000/employee (probably just general market growth), but treatment stores jumped to $60,000/employee.
+
+**My DiD calculation**: Control changed by $3,000. Treatment changed by $8,000. So the DiD effect = $8,000 - $3,000 = $5,000 per employee. This shows a real treatment effect - the training program caused an extra $5,000 in sales per employee beyond what we'd expect from market trends alone. The key assumption is parallel trends - that both groups would've grown similarly without the training.
 
 Homework reflection 4
 
 1. The Coding Quiz gives two options for instrumental variables.  For the second item (dividing the range of W into multiple ranges), explain how you did it, show your code, and discuss any issues you encountered.
 
+```python
+# Method 2: Stratified by W (Conditional on W)
+import pandas as pd
+import numpy as np
+
+# Create bins for W (narrow ranges)
+n_bins = 20
+df['W_bin'] = pd.qcut(df['W'], q=n_bins, labels=False, duplicates='drop')
+
+# Calculate effect within each stratum
+stratum_effects = []
+for bin_num in df['W_bin'].unique():
+    stratum_data = df[df['W_bin'] == bin_num]
+    
+    # Need both Z=0 and Z=1 in the stratum
+    if stratum_data['Z'].nunique() == 2:
+        stratum_z1 = stratum_data[stratum_data['Z'] == 1]
+        stratum_z0 = stratum_data[stratum_data['Z'] == 0]
+        
+        Y_diff = stratum_z1['Y'].mean() - stratum_z0['Y'].mean()
+        X_diff = stratum_z1['X'].mean() - stratum_z0['X'].mean()
+        
+        if abs(X_diff) > 0.001:
+            stratum_effects.append(Y_diff / X_diff)
+
+# Average effects across strata
+stratified_effect = np.mean(stratum_effects)
+```
+
+I used pd.qcut to divide W into 20 quantile-based bins (strata), so each stratum has roughly equal numbers of observations. Then within each stratum, I calculated the Wald estimator by comparing the Z=1 group to the Z=0 group - basically (Y_diff / X_diff) for that stratum. The main issues I ran into: First, some strata only had Z=1 or only Z=0, not both, so I had to skip those bins. Second, sometimes the X difference was really tiny, which would make the ratio explode, so I only included strata where |X_diff| > 0.001 to avoid dividing by near-zero. Finally, I averaged all the valid stratum effects to get the overall estimate. The whole point of this stratified approach is that within each narrow W range, W is basically constant, so we're controlling for confounding by comparing within similar W values.
+
 2. Plot the college outcome (Y) vs. the test score (X) in a small range of test scores around 80. On the plot, compare it with the Y probability predicted by logistic regression. The ground truth Y value is 0 or 1; don't just plot 0 or 1 - that will make it unreadable.  Find some way to make it look better than that.
+
+```python
+from sklearn.linear_model import LogisticRegression
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+
+# Load the RDD dataset A (this is the one with cutoff at 80)
+df_a = pd.read_csv('homework_4.2.a.csv', index_col=0)
+
+# Filter data around score of 80
+df_local = df_a[(df_a['X'] >= 70) & (df_a['X'] <= 90)].copy()
+
+# Fit logistic regression
+log_model = LogisticRegression()
+log_model.fit(df_local[['X']], df_local['Y'])
+
+# Get predictions
+X_range = np.linspace(70, 90, 100).reshape(-1, 1)
+Y_pred_prob = log_model.predict_proba(X_range)[:, 1]
+
+# Create plot with binned averages to show actual data
+plt.figure(figsize=(12, 6))
+
+# Bin the actual data to show average admission rate
+bins = pd.cut(df_local['X'], bins=20)
+binned_means = df_local.groupby(bins)['Y'].mean()
+bin_centers = [interval.mid for interval in binned_means.index]
+
+# Plot binned averages (makes 0/1 data readable)
+plt.scatter(bin_centers, binned_means, s=100, alpha=0.7, 
+            label='Actual (binned averages)', color='blue', edgecolors='black')
+
+# Plot logistic regression prediction
+plt.plot(X_range, Y_pred_prob, 'r-', linewidth=3, 
+         label='Logistic Regression', alpha=0.8)
+
+# Add cutoff line at 80
+plt.axvline(x=80, color='green', linestyle='--', linewidth=2, label='Cutoff = 80')
+
+plt.xlabel('Test Score (X)', fontsize=12)
+plt.ylabel('P(College Admission)', fontsize=12)
+plt.title('College Admission vs Test Score (Scores 70-90)', fontsize=14)
+plt.legend(fontsize=10)
+plt.grid(True, alpha=0.3)
+plt.ylim(-0.05, 1.05)
+plt.show()
+```
+
+I loaded dataset A (homework_4.2.a.csv) from the RDD part of the coding quiz since that's the one with the cutoff at 80. The challenge was making the binary 0/1 data readable - if you just scatter plot it, you only see dots at 0 and 1 which doesn't tell you much. My solution was to bin the test scores into 20 groups and plot the average admission rate for each bin. This creates a smooth pattern that shows the actual probability trend. Then I fit a logistic regression on the same data and overlaid that prediction line in red. The interesting thing is you can see if logistic regression properly captures any discontinuity at the cutoff - spoiler: it doesn't! Logistic regression tries to smooth everything out, which is exactly why in RDD we use separate linear regressions on each side of the cutoff instead.

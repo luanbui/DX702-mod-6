@@ -11,7 +11,27 @@ A negative feedback loop means that one thing increases another while the second
 
 Remember that we are using directed acyclic graphs where two things cannot directly cause each other.
 
+**Answer:**
+
+To make this a DAG we need an intermediate variable. Here's the diagram:
+
+```
+BodyTemp(t) → Sweating(t) → BodyTemp(t+1)
+```
+
+At time t, high body temperature causes increased sweating. The sweating then causes body temperature at time t+1 to decrease. This creates a negative feedback loop because the effect (sweating) reduces the original cause (body temperature) in the next time step. By using time as a dimension we avoid cycles in the graph.
+
 2. Describe an example of a positive feedback loop.  This means that one things increases another while the second things also increases the first.
+
+**Answer:**
+
+A good example is social media engagement. When a post gets more likes it becomes more visible to other users. Higher visibility leads to even more likes. We can represent this as a DAG using time:
+
+```
+Likes(t) → Visibility(t) → Likes(t+1)
+```
+
+The more likes a post has at time t, the more visible it becomes, which leads to even more likes at time t+1. This is positive feedback because each variable increases the other over time rather than dampening the effect.
 
 3. Draw a diagram for the following situation:
 
@@ -23,7 +43,79 @@ Write a dataset that simulates this situation.  (Show the code.) Include noise /
 
 Identify a backdoor path with one or more confounders for the relationship between deer and flowers.
 
+**Answer:**
+
+Causal Diagram:
+```
+Lightning → Deer (negative)
+Lightning → Bears (negative)
+Lightning → Flowers (positive)
+Bears → Deer (negative)
+Deer → Flowers (negative)
+```
+
+Code to simulate the data:
+
+```python
+import numpy as np
+import pandas as pd
+
+np.random.seed(42)
+n = 10000
+
+# Lightning storms (frequency per month)
+lightning = np.random.uniform(0, 10, n)
+
+# Bears population (lightning scares them away)
+bears = np.maximum(50 - 3 * lightning + np.random.normal(0, 5, n), 0)
+
+# Deer population (affected by lightning and bears)
+deer = np.maximum(100 - 2 * lightning - 0.5 * bears + np.random.normal(0, 8, n), 0)
+
+# Flowers population (lightning helps them grow, deer eat them)
+flowers = np.maximum(80 + 4 * lightning - 0.3 * deer + np.random.normal(0, 10, n), 0)
+
+df = pd.DataFrame({
+    'lightning': lightning,
+    'bears': bears,
+    'deer': deer,
+    'flowers': flowers
+})
+
+print(df.describe())
+```
+
+**Backdoor path between Deer and Flowers:**
+
+There is a backdoor path: Deer ← Lightning → Flowers
+
+Lightning is a confounder for the relationship between deer and flowers. It decreases deer population while increasing flower population. If we want to estimate the causal effect of deer on flowers we need to control for lightning. Otherwise we might underestimate how much deer actually eat flowers because lightning makes both variables move in opposite directions.
+
 4. Draw a diagram for a situation of your own invention.  The diagram should include at least four nodes, one confounder, and one collider.  Be sure that it is acyclic (no loops).  Which node would say is most like a treatment (X)?  Which is most like an outcome (Y)?
+
+**Answer:**
+
+Scenario: Study habits and exam performance
+
+```
+SleepQuality → StudyHours → ExamScore
+SleepQuality → ExamScore
+StudyHours → Stress ← ExamScore
+```
+
+Variables:
+- SleepQuality: How well rested the student is
+- StudyHours: Time spent studying
+- ExamScore: Performance on the exam
+- Stress: Student stress level
+
+**Confounder:** SleepQuality is a confounder for the relationship between StudyHours and ExamScore. Good sleep increases both study hours (more energy to study) and exam scores directly (better cognitive function).
+
+**Collider:** Stress is a collider. Both StudyHours and ExamScore cause Stress (studying a lot causes stress, and worrying about exam scores also causes stress).
+
+**Treatment (X):** StudyHours is most like a treatment because it's something a student can directly control or intervene on.
+
+**Outcome (Y):** ExamScore is most like an outcome because it's what we ultimately care about measuring.
 
 Homework Reflection 6
 
@@ -31,13 +123,128 @@ Homework Reflection 6
 Possible answer: We are likely to find the item with the most extreme difference, which may be high simply due to randomness.
 (Please explain / justify this answer, or give a different one if you can think of one.)
 
+**Answer:**
+
+The main problem is that we are picking the single most extreme value from our entire dataset. When you look at thousands of observations some will have unusually high treatment effects just by chance. This is especially true if there's measurement error or noise in the counterfactual matching process. Think about it like this: if you flip a coin 1000 times and record the longest streak of heads you'll probably get something like 10 heads in a row even though each flip is random. Similarly the maximum treatment effect might just be a statistical outlier rather than a true indication of who benefits most from treatment.
+
+The problem gets worse with larger datasets. With more observations we have more chances to find an extreme value that's just noise. This means our MTE estimate becomes unreliable and will vary a lot if we collect new data. We're essentially cherry picking the one observation that had the best luck in terms of random variation.
+
 2. Propose a solution that remedies this problem and write some code that implements your solution.  It's very important here that you clearly explain what your solution will do.
 Possible answer: maybe we could take the 90th percentile of the treatment effect and use it as a proxy for the Marginal Treatment Effect.
 (Either code this answer or choose a different one.)
 
+**Answer:**
+
+My solution uses the 95th percentile of treatment effects among the top candidates. Instead of taking the single maximum value I'll identify the top 10% of individuals by treatment effect and then report the 95th percentile within that group. This gives us a high treatment effect that's less likely to be pure noise.
+
+The logic here is that if multiple people in the top 10% show similarly high treatment effects then we can be more confident that the effect is real. If the maximum is way higher than everyone else it's probably an outlier. The 95th percentile filters out the most extreme 5% of the top group which helps reduce the influence of random noise.
+
+```python
+import numpy as np
+import pandas as pd
+from sklearn.neighbors import NearestNeighbors
+
+# Simulate data for demonstration
+np.random.seed(42)
+n = 5000
+
+# Z is a confounder
+Z = np.random.normal(0, 1, n)
+
+# Treatment assignment depends on Z
+X = (Z + np.random.normal(0, 0.5, n) > 0).astype(int)
+
+# Outcome depends on Z and treatment
+# True treatment effect varies by Z: higher Z means higher benefit
+true_effect = 2 + 0.5 * Z
+Y = 5 + true_effect * X + 2 * Z + np.random.normal(0, 1, n)
+
+df = pd.DataFrame({'Z': Z, 'X': X, 'Y': Y})
+
+# Separate groups
+treated = df[df['X'] == 1].copy()
+untreated = df[df['X'] == 0].copy()
+
+# Match each untreated to nearest treated
+nn_treated = NearestNeighbors(n_neighbors=1)
+nn_treated.fit(treated[['Z']])
+distances, indices = nn_treated.kneighbors(untreated[['Z']])
+
+# Calculate individual treatment effects for untreated
+# ITE = what they would get with treatment - what they actually got
+untreated_effects = treated.iloc[indices.flatten()]['Y'].values - untreated['Y'].values
+
+# Old approach: just take the maximum
+naive_mte = np.max(untreated_effects)
+
+# New approach: 95th percentile of top 10%
+top_10_percent_cutoff = np.percentile(untreated_effects, 90)
+top_candidates = untreated_effects[untreated_effects >= top_10_percent_cutoff]
+robust_mte = np.percentile(top_candidates, 95)
+
+print(f"Naive MTE (maximum): {naive_mte:.4f}")
+print(f"Robust MTE (95th percentile of top 10%): {robust_mte:.4f}")
+print(f"Difference: {naive_mte - robust_mte:.4f}")
+print(f"\nNumber of top candidates: {len(top_candidates)}")
+print(f"Mean of top candidates: {np.mean(top_candidates):.4f}")
+print(f"Std of top candidates: {np.std(top_candidates):.4f}")
+```
+
+This approach balances two goals. We still focus on individuals with high treatment effects (the top 10%) but we use a percentile within that group rather than the raw maximum. This makes the estimate more stable and less sensitive to outliers.
+
 Homework Reflection 7
 
 1. Create a linear regression model involving a confounder that is left out of the model.  Show whether the true correlation between $$X$$ and $$Y$$ is overestimated, underestimated, or neither.  Explain in words why this is the case for the given coefficients you have chosen.
+
+**Answer:**
+
+```python
+import numpy as np
+from sklearn.linear_model import LinearRegression
+
+np.random.seed(42)
+n = 1000
+
+# Generate data following the pattern from coding quiz 7
+# W is a confounder
+W = np.random.normal(0, 1, n)
+
+# X is affected by W
+X = W + np.random.normal(0, 1, n)
+
+# Z is independent
+Z = np.random.normal(0, 1, n)
+
+# Y is affected by X, Z, and W
+# True coefficients: X=1, Z=1, W=1
+Y = X + Z + W + np.random.normal(0, 1, n)
+
+# Model WITHOUT confounder W (incorrect model)
+X_partial = np.column_stack([X, Z])
+model_biased = LinearRegression()
+model_biased.fit(X_partial, Y)
+
+# Model WITH confounder W (correct model)
+X_full = np.column_stack([X, Z, W])
+model_correct = LinearRegression()
+model_correct.fit(X_full, Y)
+
+print("Model WITHOUT W (omitted confounder):")
+print(f"  Coefficient of X: {model_biased.coef_[0]:.4f}")
+print(f"  Coefficient of Z: {model_biased.coef_[1]:.4f}")
+
+print("\nModel WITH W (correct model):")
+print(f"  Coefficient of X: {model_correct.coef_[0]:.4f}")
+print(f"  Coefficient of Z: {model_correct.coef_[1]:.4f}")
+print(f"  Coefficient of W: {model_correct.coef_[2]:.4f}")
+
+print(f"\nTrue coefficients: X=1.0, Z=1.0, W=1.0")
+print(f"Coefficient of X is OVERESTIMATED by: {model_biased.coef_[0] - 1.0:.4f}")
+```
+
+The coefficient of X is overestimated when we leave out W. This happens because X and W are correlated (since X = W + noise) and W also affects Y. When we omit W from the model the regression tries to explain all the variation in Y using only X and Z. Since W influences Y and W is correlated with X the model incorrectly attributes some of W's effect on Y to X instead.
+
+The math works out like this. When we write Y as depending only on X and Z the error term becomes W + epsilon instead of just epsilon. Since X and W are correlated X is now correlated with the error term which violates a key regression assumption. This correlation causes the estimated coefficient of X to be biased upward. We can think of it as X getting credit for both its direct effect on Y and some of W's effect on Y.
 
 2. Perform a linear regression analysis in which one of the coefficients is zero, e.g.
 
@@ -51,6 +258,200 @@ If the p-value is less than 0.05, this ordinarily means that we judge the coeffi
 Run the analysis 1000 times and report the best (smallest) p-value.  
 If the p-value is less than 0.05, does this mean the coefficient actually is nonzero?  What is the problem with repeating the analysis?
 
+**Answer:**
+
+```python
+import numpy as np
+import pandas as pd
+from sklearn.linear_model import LinearRegression
+from scipy import stats
+
+np.random.seed(42)
+n_experiments = 1000
+n_samples = 100
+p_values = []
+
+for i in range(n_experiments):
+    # Generate data following the pattern from coding quiz 7
+    # W has NO effect on Y (coefficient is zero)
+    W = np.random.normal(0, 1, n_samples)
+    X = np.random.normal(0, 1, n_samples)
+    Y = 2 * X + np.random.normal(0, 1, n_samples)
+    
+    # Fit regression Y ~ W + X
+    predictors = np.column_stack([W, X])
+    model = LinearRegression()
+    model.fit(predictors, Y)
+    
+    # Calculate p-value for W coefficient
+    predictions = model.predict(predictors)
+    residuals = Y - predictions
+    dof = n_samples - 3  # degrees of freedom: n - (intercept + 2 predictors)
+    mse = np.sum(residuals**2) / dof
+    
+    # Standard error of W coefficient
+    X_with_intercept = np.column_stack([np.ones(n_samples), predictors])
+    var_covar = mse * np.linalg.inv(X_with_intercept.T @ X_with_intercept)
+    se_W = np.sqrt(var_covar[1, 1])  # [1,1] is W's variance
+    
+    # t-statistic and p-value
+    t_stat = model.coef_[0] / se_W
+    p_value = 2 * (1 - stats.t.cdf(abs(t_stat), dof))
+    p_values.append(p_value)
+
+p_values = np.array(p_values)
+min_p_value = np.min(p_values)
+num_significant = np.sum(p_values < 0.05)
+
+print(f"Results from {n_experiments} experiments:")
+print(f"Smallest (best) p-value: {min_p_value:.6f}")
+print(f"Number of times p < 0.05: {num_significant}")
+print(f"Percentage: {100 * num_significant / n_experiments:.1f}%")
+print(f"\nExpected percentage with p < 0.05: 5.0% (by definition of p-value)")
+```
+
+Even though W truly has zero effect on Y we still get about 5% of experiments with p-values below 0.05. The smallest p-value across all experiments is usually around 0.001 or even smaller. This does NOT mean W actually has an effect. The problem is called p-hacking or multiple testing and it's a serious issue in research.
+
+When we run 1000 experiments and cherry pick the one with the smallest p-value we're guaranteed to find something that looks significant just by random chance. Think about it this way. A p-value of 0.05 means there's a 5% chance of getting a result this extreme if the null hypothesis is true. So if we run 1000 tests we expect around 50 to show p less than 0.05 purely by luck. Reporting only the most extreme one is misleading because we're ignoring all the times where nothing significant happened. This is why preregistration and correction for multiple comparisons are important in real research.
+
 Homework Reflection 8
 
 Include the code you used to solve the two coding quiz problems and write about the obstacles / challenges / insights you encountered while solving them.
+
+## Problem 1: Average Treatment Effect with Inverse Probability Weighting
+
+**Code:**
+
+```python
+import pandas as pd
+import numpy as np
+from sklearn.linear_model import LogisticRegression
+import warnings
+warnings.filterwarnings('ignore')
+
+# Load the data
+df = pd.read_csv('homework_8.1.csv')
+
+# Step 1: Identify variables
+X_treatment = df['X']
+Y_outcome = df['Y']
+Z_covariates = df.filter(regex='^Z')
+
+print(f"Number of covariates: {Z_covariates.shape[1]}")
+
+# Step 2: Estimate propensity scores using logistic regression
+logreg = LogisticRegression(max_iter=1000, random_state=42)
+logreg.fit(Z_covariates, X_treatment)
+
+# Step 3: Predict propensity scores
+propensity_scores = logreg.predict_proba(Z_covariates)[:, 1]
+
+print(f"Propensity score range: [{propensity_scores.min():.4f}, {propensity_scores.max():.4f}]")
+
+# Step 4: Calculate inverse probability weights
+weights = np.where(X_treatment == 1, 
+                   1 / propensity_scores,
+                   1 / (1 - propensity_scores))
+
+# Step 5: Calculate ATE
+treated_mask = (X_treatment == 1)
+control_mask = (X_treatment == 0)
+
+weighted_outcome_treated = (weights[treated_mask] * Y_outcome[treated_mask]).sum()
+sum_weights_treated = weights[treated_mask].sum()
+avg_outcome_treated = weighted_outcome_treated / sum_weights_treated
+
+weighted_outcome_control = (weights[control_mask] * Y_outcome[control_mask]).sum()
+sum_weights_control = weights[control_mask].sum()
+avg_outcome_control = weighted_outcome_control / sum_weights_control
+
+ATE = avg_outcome_treated - avg_outcome_control
+
+print(f"\nAverage Treatment Effect (ATE): {ATE:.6f}")
+
+# Compare with naive estimate
+naive_ATE = Y_outcome[treated_mask].mean() - Y_outcome[control_mask].mean()
+print(f"Naive ATE (no weighting): {naive_ATE:.6f}")
+print(f"Difference: {ATE - naive_ATE:.6f}")
+```
+
+**Challenges and Insights:**
+
+The first challenge was figuring out which columns were actually covariates. I used `filter(regex='^Z')` to get only columns starting with Z which avoided accidentally including the index column. This was important because including the wrong columns would mess up the propensity score model.
+
+The second challenge was understanding why we need inverse probability weights. The key insight is that we're trying to create a pseudo population where treatment assignment is random. Units that are unlikely to receive their actual treatment get higher weights to compensate. For example if someone has covariates that strongly predict control but they got treatment anyway their observation gets weighted heavily because they represent a rare case.
+
+One thing that surprised me was how different the IPW estimate can be from the naive estimate. The naive approach just compares average outcomes between treated and control groups but this is biased if treatment assignment depends on the covariates. IPW fixes this by reweighting to balance the covariate distributions. The bigger the difference between IPW and naive estimates the more confounding there was in the original data.
+
+## Problem 2: Mahalanobis Distance Matching
+
+**Code:**
+
+```python
+import pandas as pd
+import numpy as np
+from scipy.spatial.distance import mahalanobis
+
+# Load the data
+df2 = pd.read_csv('homework_8.2.csv')
+
+# Step 1: Prepare data and calculate inverse covariance matrix
+X2 = df2['X']
+Y2 = df2['Y']
+Z_cols_2 = df2.filter(regex='^Z').columns.tolist()
+
+treated_df = df2[X2 == 1].copy()
+untreated_df = df2[X2 == 0].copy()
+
+print(f"Treated items: {len(treated_df)}")
+print(f"Untreated items: {len(untreated_df)}")
+
+# Create Z matrix and calculate covariance
+Z_matrix = df2[Z_cols_2].values.T
+cov_matrix = np.cov(Z_matrix)
+inv_cov_matrix = np.linalg.inv(cov_matrix)
+
+print(f"\nCovariance matrix:\n{cov_matrix}")
+
+# Step 2: Match each treated item to nearest untreated item
+matches = []
+treated_Z = treated_df[Z_cols_2].values
+untreated_Z = untreated_df[Z_cols_2].values
+
+for i, treated_point in enumerate(treated_Z):
+    min_distance = float('inf')
+    best_match_idx = -1
+    
+    for j, untreated_point in enumerate(untreated_Z):
+        distance = mahalanobis(treated_point, untreated_point, inv_cov_matrix)
+        
+        if distance < min_distance:
+            min_distance = distance
+            best_match_idx = j
+    
+    matches.append({
+        'treated_idx': treated_df.index[i],
+        'untreated_idx': untreated_df.index[best_match_idx],
+        'distance': min_distance
+    })
+
+matches_df = pd.DataFrame(matches)
+
+print(f"\nMatching complete! {len(matches)} treated items matched.")
+print(f"Mean Mahalanobis distance: {matches_df['distance'].mean():.4f}")
+print(f"Min distance: {matches_df['distance'].min():.4f}")
+print(f"Max distance: {matches_df['distance'].max():.4f}")
+
+# Check how often each untreated item was used
+match_counts = matches_df['untreated_idx'].value_counts()
+print(f"\nMost frequently matched untreated items:")
+print(match_counts.head())
+```
+
+**Challenges and Insights:**
+
+The main challenge was understanding why we need the inverse covariance matrix. Regular Euclidean distance treats all dimensions equally but that doesn't make sense if the variables have different scales or are correlated. Mahalanobis distance accounts for the covariance structure of the data. If two variables are highly correlated then distance along their shared direction matters less than distance perpendicular to it.
+
+Another insight was about matching with replacement. Some untreated individuals got matched to multiple treated individuals. This makes sense because if an untreated person has common covariate values they might be the best match for several treated people. Without replacement we would be forced to use worse matches later on. With replacement we can reuse good matches which generally reduces the average matching distance.
+
+The implementation was straightforward once I understood the math. The nested loop isn't the most efficient approach but it works fine for reasonably sized datasets. For very large datasets I would want to use a more efficient nearest neighbor algorithm. One thing to watch out for is making sure the covariance matrix is calculated on all the data not just the treated or untreated group because we need a common metric for comparing points across both groups.
